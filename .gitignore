@@ -1,0 +1,34 @@
+# ────────────────────────────────────────────────
+# Hybrid Audio API · Git Ignore (v3.9.1)
+# ────────────────────────────────────────────────
+
+# 🧠 Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# 🗂️ Local data, audio outputs & cache
+stems/
+output/
+cache/
+logs/
+nohup.out
+/tmp/
+*.wav
+*.mp3
+*.flac
+*.aiff
+*.ogg
+
+# ⚙️ Environment & config
+.env
+*.log
+*.lock
+stems_index.json
+rotations_meta.json
+
+# 🧪 IDEs & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

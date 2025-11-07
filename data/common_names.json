@@ -1,0 +1,27 @@
+{
+  "items": [
+    "John",
+    "Sarah",
+    "Michael",
+    "Emily",
+    "David",
+    "Sophia",
+    "Daniel",
+    "Olivia",
+    "Matthew",
+    "Isabella",
+    "James",
+    "Ava",
+    "Liam",
+    "Mia",
+    "Noah",
+    "Charlotte"
+  ],
+  "description": "Common first names for rotational greeting stems (used in 'Hello {name}').",
+  "metadata": {
+    "version": "v1.0-test",
+    "locale": "en-US",
+    "category": "first_names",
+    "note": "This sample set is designed for test batch caching and template validation."
+  }
+}
