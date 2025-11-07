@@ -24,16 +24,30 @@ Example output:
 
 ## 🧩 Core Features
 
-| Feature | Description |
-|----------|-------------|
-| 🗣️ **Sonic-3 API Integration** | Uses Cartesia’s neural TTS (tone, speed, and pause control) |
-| 🧬 **Bit-Exact Merge** | Structural audio assembly via `bitmerge_semantic` |
-| 💾 **Rotational Caching** | Pre-generates and stores stems for common names and developers |
-| ⚙️ **Hybrid Template System** | JSON-based phrasing templates with embedded timing maps |
-| 🧠 **Semantic Timing** | Maintains natural gaps and crossfades across message stems |
-| 🔁 **Batch Generator** | Mass-provisions “Hello {name}” and “{developer} timeshare” stems |
-| 🩺 **Health & Cache Endpoints** | REST endpoints for diagnostics and validation |
-| 🧩 **Makefile Automation** | End-to-end orchestration for testing, caching, and audit |
+
+- Sonic-3 API Integration
+Integrates with Cartesia’s neural text-to-speech (TTS) engine, supporting fine-grained control over tone, speed, and pause timing for natural-sounding delivery.
+
+- Bit-Exact Merge
+Assembles stems using the bitmerge_semantic module to guarantee sample-accurate, lossless merges between clips.
+
+- Rotational Caching
+Pre-generates and stores reusable audio stems for common names and developer brands, reducing TTS API calls and ensuring consistent voice output.
+
+- Hybrid Template System
+Uses JSON-based phrasing templates that define structure, pacing, and timing maps for dynamic voice message generation.
+
+- Semantic Timing
+Preserves natural speech rhythm by applying timing maps with precise gaps and crossfades between message stems.
+
+- Batch Generator
+Automates large-scale provisioning of personalized stems such as “Hello {name}” and “{developer} timeshare,” with concurrency and retry logic.
+
+- Health and Cache Endpoints
+Provides REST API routes for monitoring system health, cache integrity, and dataset validation.
+
+- Makefile Automation
+Centralizes all project operations — from environment setup to full audits — into a single reproducible command interface.
 
 ---
 
@@ -195,4 +209,5 @@ Introduce multi-voice ensemble generation (dual narrator flow)
 MIT License — see LICENSE file.
 
 Hybrid Audio API — Precision Speech Assembly for Adaptive Communication
+
 © 2025 José Daniel Soto
