@@ -16,6 +16,7 @@ import wave
 from config import STEMS_DIR, SONIC3_SAMPLE_RATE, BIT_DEPTH
 from naming_contract import build_silence_filename
 
+# Contract: Sonic-3 ONLY supports 16-bit PCM.
 if BIT_DEPTH != 16:
     raise ValueError("Sonic-3 requires BIT_DEPTH = 16")
 
@@ -41,7 +42,13 @@ def generate_silence(duration_ms: int) -> str:
     target = _silence_path(duration_ms)
     target.parent.mkdir(parents=True, exist_ok=True)
 
+    # Number of silence samples required
     samples = int(duration_ms * (SONIC3_SAMPLE_RATE / 1000))
+
+    # Ensure even-aligned frame count for S16LE merge integrity
+    if samples % 2 != 0:
+        samples += 1
+
     frame = struct.pack("<h", 0)  # 16-bit little endian zero sample
     payload = frame * samples
 
