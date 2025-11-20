@@ -26,6 +26,10 @@ from config import (
     VOICE_ID,
     build_sonic3_payload,
 )
+from errors.sonic3_errors import Sonic3Error
+
+
+class Sonic3ClientError(Sonic3Error):
 
 
 class Sonic3ClientError(Exception):

@@ -36,6 +36,8 @@ def validate_wav_header(path: str) -> Dict[str, Any]:
     bit_depth = sample_width * 8
     if bit_depth not in (16, 24, 32):
         raise OutputValidationError(f"Unexpected bit depth: {bit_depth}")
+    if bit_depth != 16:
+        print(f"[WARN] Non-Sonic-3 bit depth detected ({bit_depth} bits)")
 
     if duration <= 0:
         raise OutputValidationError("WAV duration must be greater than zero")

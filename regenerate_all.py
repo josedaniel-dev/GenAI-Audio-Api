@@ -27,6 +27,7 @@ from config import (
     TEMPLATE_DIR,
 )
 from silence_generator import ensure_silence_stem_exists
+from naming_contract import build_stem_filename
 from validator_audio import validate_wav_header
 
 
@@ -48,6 +49,9 @@ def _load_list(path: Path) -> Iterable[str]:
 
 
 def _cleanup_stems() -> None:
+    for wav in STEMS_DIR.glob("stem.*.wav"):
+        wav.unlink(missing_ok=True)
+    for wav in STEMS_DIR.glob("silence.*ms.wav"):
     for wav in STEMS_DIR.rglob("*.wav"):
         wav.unlink(missing_ok=True)
 
@@ -57,6 +61,12 @@ def _generate_list_stems(items: Iterable[str], kind: str) -> Dict[str, str]:
     for item in items:
         if not item:
             continue
+        stem_label = build_stem_filename(kind, item)
+        try:
+            path = cartesia_generate(item, stem_label, voice_id=VOICE_ID)
+            generated[stem_label] = path
+        except Exception as exc:
+            print(f"[WARN] Failed to generate stem {stem_label}: {exc}")
         stem_label = f"stem.{kind}.{item}" if not item.startswith("stem.") else item
         try:
             path = cartesia_generate(item, stem_label, voice_id=VOICE_ID)
@@ -73,6 +83,8 @@ def _extract_breaks(template: Dict[str, Any]) -> Set[int]:
             dur = int(seg.get("break_ms", 0) or 0)
             if dur > 0:
                 durations.add(dur)
+        except Exception as exc:
+            print(f"[WARN] Failed to parse break_ms in segment {seg!r}: {exc}")
         except Exception:
             continue
     return durations
@@ -86,6 +98,11 @@ def _generate_template_stems(template: Dict[str, Any]) -> Dict[str, str]:
         if not seg_id or not text:
             continue
         try:
+            stem_label = build_stem_filename("generic", seg_id)
+            path = cartesia_generate(text, stem_label, voice_id=VOICE_ID)
+            generated[stem_label] = path
+        except Exception as exc:
+            print(f"[WARN] Failed to generate template stem {seg_id}: {exc}")
             path = cartesia_generate(text, seg_id, voice_id=VOICE_ID)
             generated[seg_id] = path
         except Exception:
@@ -111,6 +128,12 @@ def regenerate_all() -> None:
     for template_file in TEMPLATE_DIR.glob("*.json"):
         try:
             template = load_template(str(template_file))
+        except Exception as exc:
+            print(f"[WARN] Failed to load template via loader {template_file}: {exc}")
+            try:
+                template = _read_json(template_file)
+            except Exception as fallback_exc:
+                print(f"[WARN] Failed to parse template fallback {template_file}: {fallback_exc}")
         except Exception:
             try:
                 template = _read_json(template_file)
@@ -138,6 +161,8 @@ def regenerate_all() -> None:
     for stem_id, path in generated.items():
         try:
             header = validate_wav_header(path)
+        except Exception as exc:
+            print(f"[WARN] Skipping invalid stem {stem_id}: {exc}")
         except Exception:
             continue
         index_payload["stems"][stem_id] = {

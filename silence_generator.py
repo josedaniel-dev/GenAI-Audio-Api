@@ -16,6 +16,9 @@ import wave
 from config import STEMS_DIR, SONIC3_SAMPLE_RATE, BIT_DEPTH
 from naming_contract import build_silence_filename
 
+if BIT_DEPTH != 16:
+    raise ValueError("Sonic-3 requires BIT_DEPTH = 16")
+
 _SAMPLE_WIDTH: Final[int] = BIT_DEPTH // 8
 _CHANNELS: Final[int] = 1
 

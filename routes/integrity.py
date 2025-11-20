@@ -54,6 +54,17 @@ def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
     }
 
     if exists:
+        try:
+            header = validate_wav_header(str(file_path))
+            validate_sample_rate(str(file_path))
+            validate_channels(str(file_path))
+            validate_encoding(str(file_path))
+            validate_duration(str(file_path))
+            validate_merge_integrity(str(file_path))
+            info["wav_header"] = header
+        except Exception as exc:
+            info["wav_header"] = {"error": str(exc)}
+            info["cache_status"] = "invalid"
         header = validate_wav_header(str(file_path))
         validate_sample_rate(str(file_path))
         validate_channels(str(file_path))
@@ -73,6 +84,8 @@ def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
                 if blob.exists():
                     info["cache_status"] = "gcs"
                     info["signed_url"] = blob.generate_signed_url(expiration=3600)
+        except Exception as exc:
+            print(f"[WARN] Failed to resolve GCS info for {file_path.name}: {exc}")
         except Exception:
             pass
 
