@@ -6,6 +6,7 @@ import datetime
 import re
 from pathlib import Path
 from typing import Final, Dict
+from typing import Final
 
 _SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(r"[^a-z0-9]+")
 
@@ -89,3 +90,4 @@ def validate_stem_kind(kind: str) -> None:
     allowed = {"name", "developer", "generic", "segment"}
     if kind not in allowed:
         raise ValueError(f"Invalid stem kind '{kind}'. Allowed: {', '.join(sorted(allowed))}")
+]

@@ -6,6 +6,7 @@ import json
 import os
 import struct
 import wave
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
@@ -35,6 +36,7 @@ from validator_audio import (
     detect_clipped_samples,
 )
 from gcs_consistency import compare_local_vs_gcs
+)
 
 try:
     from gcloud_storage import init_gcs_client
@@ -113,6 +115,16 @@ def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
         except Exception as exc:
             info["wav_header"] = {"error": str(exc)}
             info["cache_status"] = "invalid"
+        except Exception as exc:
+            info["wav_header"] = {"error": str(exc)}
+            info["cache_status"] = "invalid"
+        header = validate_wav_header(str(file_path))
+        validate_sample_rate(str(file_path))
+        validate_channels(str(file_path))
+        validate_encoding(str(file_path))
+        validate_duration(str(file_path))
+        validate_merge_integrity(str(file_path))
+        info["wav_header"] = header
 
     if is_gcs_enabled() and GCS_BUCKET and init_gcs_client:
         blob_name = build_gcs_blob_path(folder, file_path.name)
@@ -127,6 +139,8 @@ def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
                     info["signed_url"] = blob.generate_signed_url(expiration=3600)
         except Exception as exc:
             print(f"[WARN] Failed to resolve GCS info for {file_path.name}: {exc}")
+        except Exception:
+            pass
 
     return info
 

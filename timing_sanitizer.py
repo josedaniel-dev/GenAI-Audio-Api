@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Dict, Any, Iterable, Set, List
+from typing import Dict, Any, Iterable, Set
 
 from errors.sonic3_errors import TemplateContractError, TimingMapError
 from naming_contract import build_silence_filename
@@ -185,3 +186,4 @@ __all__ = [
     "auto_fill_missing_transitions",
     "enforce_exclusive_break_vs_crossfade",
 ]
+__all__ = ["validate_timing_map", "normalize_breaks", "resolve_silence_stems"]

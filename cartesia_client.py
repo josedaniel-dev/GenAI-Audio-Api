@@ -13,6 +13,9 @@ import json
 import re
 import time
 import wave
+import json
+import re
+import time
 from typing import Any, Dict
 
 import requests
@@ -32,6 +35,13 @@ from errors.sonic3_errors import Sonic3Error, OutputValidationError
 
 
 class Sonic3ClientError(Sonic3Error):
+from errors.sonic3_errors import Sonic3Error
+
+
+class Sonic3ClientError(Sonic3Error):
+
+
+class Sonic3ClientError(Exception):
     """Base error for Cartesia client failures."""
 
 

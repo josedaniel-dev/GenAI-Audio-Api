@@ -8,6 +8,7 @@ import struct
 import wave
 from pathlib import Path
 from typing import Dict, Any, Iterable, Tuple, List
+from typing import Dict, Any
 
 from errors.sonic3_errors import OutputValidationError, MergeIntegrityError
 from config import SONIC3_SAMPLE_RATE
@@ -85,6 +86,11 @@ def validate_duration(path: str) -> float:
 def _sample_generator(path: Path, chunk_size: int = 4096) -> Iterable[int]:
     with wave.open(str(path), "rb") as wf:
         sample_width = wf.getsampwidth()
+def _iter_samples(path: Path, chunk_size: int = 4096):
+    with wave.open(str(path), "rb") as wf:
+        sample_width = wf.getsampwidth()
+        if sample_width != 2:
+            raise MergeIntegrityError("Only 16-bit PCM is supported for merge integrity checks")
 
         while True:
             frames = wf.readframes(chunk_size)
@@ -104,6 +110,9 @@ def _sample_generator(path: Path, chunk_size: int = 4096) -> Iterable[int]:
                     if val & 0x800000:
                         val -= 0x1000000
                     yield val
+            samples = struct.unpack(f"<{count}h", frames)
+            for sample in samples:
+                yield sample
 
 
 def validate_merge_integrity(path: str) -> None:
@@ -122,6 +131,12 @@ def validate_merge_integrity(path: str) -> None:
         if math.isinf(sample) or math.isnan(sample):
             raise MergeIntegrityError("Detected invalid sample (NaN/Inf)")
         if sample in (max_val, min_val):
+    peak = 0
+    clipping = False
+    for sample in _iter_samples(file_path):
+        if math.isinf(sample) or math.isnan(sample):
+            raise MergeIntegrityError("Detected invalid sample (NaN/Inf)")
+        if sample in (32767, -32768):
             clipping = True
         peak = max(peak, abs(sample))
 
