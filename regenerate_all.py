@@ -52,6 +52,7 @@ def _cleanup_stems() -> None:
     for wav in STEMS_DIR.glob("stem.*.wav"):
         wav.unlink(missing_ok=True)
     for wav in STEMS_DIR.glob("silence.*ms.wav"):
+    for wav in STEMS_DIR.rglob("*.wav"):
         wav.unlink(missing_ok=True)
 
 
@@ -66,6 +67,11 @@ def _generate_list_stems(items: Iterable[str], kind: str) -> Dict[str, str]:
             generated[stem_label] = path
         except Exception as exc:
             print(f"[WARN] Failed to generate stem {stem_label}: {exc}")
+        stem_label = f"stem.{kind}.{item}" if not item.startswith("stem.") else item
+        try:
+            path = cartesia_generate(item, stem_label, voice_id=VOICE_ID)
+            generated[stem_label] = path
+        except Exception:
             continue
     return generated
 
@@ -79,6 +85,7 @@ def _extract_breaks(template: Dict[str, Any]) -> Set[int]:
                 durations.add(dur)
         except Exception as exc:
             print(f"[WARN] Failed to parse break_ms in segment {seg!r}: {exc}")
+        except Exception:
             continue
     return durations
 
@@ -96,6 +103,9 @@ def _generate_template_stems(template: Dict[str, Any]) -> Dict[str, str]:
             generated[stem_label] = path
         except Exception as exc:
             print(f"[WARN] Failed to generate template stem {seg_id}: {exc}")
+            path = cartesia_generate(text, seg_id, voice_id=VOICE_ID)
+            generated[seg_id] = path
+        except Exception:
             continue
     return generated
 
@@ -124,6 +134,10 @@ def regenerate_all() -> None:
                 template = _read_json(template_file)
             except Exception as fallback_exc:
                 print(f"[WARN] Failed to parse template fallback {template_file}: {fallback_exc}")
+        except Exception:
+            try:
+                template = _read_json(template_file)
+            except Exception:
                 continue
         silence_durations.update(_extract_breaks(template))
         template_stems.update(_generate_template_stems(template))
@@ -149,6 +163,7 @@ def regenerate_all() -> None:
             header = validate_wav_header(path)
         except Exception as exc:
             print(f"[WARN] Skipping invalid stem {stem_id}: {exc}")
+        except Exception:
             continue
         index_payload["stems"][stem_id] = {
             "path": path,

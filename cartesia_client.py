@@ -30,6 +30,9 @@ from errors.sonic3_errors import Sonic3Error
 
 
 class Sonic3ClientError(Sonic3Error):
+
+
+class Sonic3ClientError(Exception):
     """Base error for Cartesia client failures."""
 
 
