@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+import struct
+import wave
 import os
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +19,7 @@ from config import (
     GCS_BUCKET,
     GCS_FOLDER_STEMS,
     GCS_FOLDER_OUTPUTS,
+    STEMS_INDEX_FILE,
     build_gcs_blob_path,
     build_gcs_uri,
     is_gcs_enabled,
@@ -26,6 +31,11 @@ from validator_audio import (
     validate_encoding,
     validate_duration,
     validate_merge_integrity,
+    compute_sha256,
+    compute_rms,
+    detect_clipped_samples,
+)
+from gcs_consistency import compare_local_vs_gcs
 )
 
 try:
@@ -37,6 +47,35 @@ router = APIRouter()
 
 
 # Helpers --------------------------------------------------------------------
+
+def _iter_samples(path: Path):
+    with wave.open(str(path), "rb") as wf:
+        sample_width = wf.getsampwidth()
+        fmt_map = {1: "b", 2: "h", 4: "i"}
+        while True:
+            frames = wf.readframes(4096)
+            if not frames:
+                break
+            count = len(frames) // sample_width
+            if sample_width in fmt_map:
+                samples = struct.unpack(f"<{count}{fmt_map[sample_width]}", frames)
+                for sample in samples:
+                    yield sample
+            else:
+                for i in range(count):
+                    chunk = frames[i * sample_width : (i + 1) * sample_width]
+                    val = int.from_bytes(chunk, byteorder="little", signed=False)
+                    if val & 0x800000:
+                        val -= 0x1000000
+                    yield val
+
+
+def _peak_amplitude(path: Path) -> int:
+    peak = 0
+    for sample in _iter_samples(path):
+        peak = max(peak, abs(sample))
+    return peak
+
 
 def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
     exists = file_path.exists()
@@ -51,6 +90,12 @@ def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
         "cache_status": "missing" if not exists else "present",
         "public_url": None,
         "signed_url": None,
+        "sha256": None,
+        "peak_amplitude": None,
+        "rms": None,
+        "clipped_samples": None,
+        "contract_compliance": False,
+        "gcs_consistency": compare_local_vs_gcs(file_path.name),
     }
 
     if exists:
@@ -62,6 +107,14 @@ def _file_info(file_path: Path, folder: str) -> Dict[str, Any]:
             validate_duration(str(file_path))
             validate_merge_integrity(str(file_path))
             info["wav_header"] = header
+            info["contract_compliance"] = True
+            info["sha256"] = compute_sha256(str(file_path))
+            info["rms"] = compute_rms(str(file_path))
+            info["clipped_samples"] = detect_clipped_samples(str(file_path))
+            info["peak_amplitude"] = _peak_amplitude(file_path)
+        except Exception as exc:
+            info["wav_header"] = {"error": str(exc)}
+            info["cache_status"] = "invalid"
         except Exception as exc:
             info["wav_header"] = {"error": str(exc)}
             info["cache_status"] = "invalid"
@@ -96,6 +149,24 @@ def _list_wavs(root: Path) -> List[Path]:
     return [p for p in root.glob("*.wav") if p.is_file()]
 
 
+def _load_stems_index() -> Dict[str, Any]:
+    if not STEMS_INDEX_FILE.exists():
+        return {}
+    try:
+        return json.loads(STEMS_INDEX_FILE.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to read stems_index.json: {exc}")
+
+
+def _compare_index_to_fs(index: Dict[str, Any]) -> Dict[str, List[str]]:
+    indexed = set(index.get("stems", {}).keys()) if index else set()
+    present = {p.name for p in _list_wavs(STEMS_DIR)}
+    return {
+        "missing_in_fs": sorted(indexed - present),
+        "missing_in_index": sorted(present - indexed),
+    }
+
+
 # Routes ---------------------------------------------------------------------
 
 
@@ -121,6 +192,20 @@ async def integrity_outputs() -> Dict[str, Any]:
         return {"status": "ok", "count": len(items), "items": items}
     except Exception as exc:
         raise HTTPException(500, f"Failed to inspect outputs: {exc}")
+
+
+@router.get("/integrity/stems-index")
+async def integrity_stems_index() -> Dict[str, Any]:
+    """Return the recorded stems index and compare against filesystem."""
+
+    index = _load_stems_index()
+    comparison = _compare_index_to_fs(index)
+    return {
+        "status": "ok",
+        "index_present": bool(index),
+        "comparison": comparison,
+        "index": index,
+    }
 
 
 __all__ = ["router"]

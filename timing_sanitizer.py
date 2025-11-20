@@ -9,6 +9,7 @@ under ``stems/``.
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Dict, Any, Iterable, Set, List
 from typing import Dict, Any, Iterable, Set
 
 from errors.sonic3_errors import TemplateContractError, TimingMapError
@@ -98,4 +99,91 @@ def resolve_silence_stems(timing_map: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def validate_graph_structure(timing_map: Dict[str, Any]) -> None:
+    """Validate the transitions graph for connectivity and cycles."""
+
+    validate_timing_map(timing_map)
+    segments = timing_map.get("segments", [])
+    transitions = timing_map.get("timing_map") or timing_map.get("transitions") or []
+
+    graph: Dict[str, Set[str]] = {seg["id"]: set() for seg in segments}
+    inbound: Dict[str, int] = {seg["id"]: 0 for seg in segments}
+    for edge in transitions:
+        src = edge.get("from")
+        dst = edge.get("to")
+        if src in graph and dst:
+            graph[src].add(dst)
+            inbound[dst] = inbound.get(dst, 0) + 1
+
+    roots = [node for node, deg in inbound.items() if deg == 0]
+    if len(roots) > 1:
+        raise TimingMapError(f"Multiple roots detected: {', '.join(sorted(roots))}")
+    if not roots:
+        raise TimingMapError("No root node found in timing graph")
+
+    # Cycle detection
+    visited: Set[str] = set()
+    stack: Set[str] = set()
+
+    def dfs(node: str) -> None:
+        if node in stack:
+            raise TimingMapError("Cycle detected in timing graph")
+        if node in visited:
+            return
+        visited.add(node)
+        stack.add(node)
+        for neighbor in graph.get(node, set()):
+            dfs(neighbor)
+        stack.remove(node)
+
+    for root in roots:
+        dfs(root)
+
+    isolated = [node for node, edges in graph.items() if not edges and inbound.get(node, 0) == 0]
+    if isolated and len(graph) > 1:
+        raise TimingMapError(f"Isolated timing nodes without transitions: {', '.join(sorted(isolated))}")
+
+
+def auto_fill_missing_transitions(timing_map: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill sequential transitions when none are provided."""
+
+    clone = deepcopy(timing_map)
+    if clone.get("timing_map"):
+        return clone
+
+    segments: List[Dict[str, Any]] = clone.get("segments", [])
+    transitions: List[Dict[str, Any]] = []
+    for idx in range(len(segments) - 1):
+        src = segments[idx].get("id")
+        dst = segments[idx + 1].get("id")
+        transitions.append({
+            "from": src,
+            "to": dst,
+            "gap_ms": segments[idx].get("gap_ms", 0) or 0,
+            "crossfade_ms": segments[idx].get("crossfade_ms", 0) or 0,
+        })
+
+    clone["timing_map"] = transitions
+    return clone
+
+
+def enforce_exclusive_break_vs_crossfade(timing_map: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure break_ms and crossfade_ms are not both active."""
+
+    clone = deepcopy(timing_map)
+    for seg in clone.get("segments", []):
+        break_ms = float(seg.get("break_ms", 0) or 0)
+        if break_ms > 0:
+            seg["crossfade_ms"] = 0
+    return clone
+
+
+__all__ = [
+    "validate_timing_map",
+    "normalize_breaks",
+    "resolve_silence_stems",
+    "validate_graph_structure",
+    "auto_fill_missing_transitions",
+    "enforce_exclusive_break_vs_crossfade",
+]
 __all__ = ["validate_timing_map", "normalize_breaks", "resolve_silence_stems"]

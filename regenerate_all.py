@@ -27,6 +27,14 @@ from config import (
     TEMPLATE_DIR,
 )
 from silence_generator import ensure_silence_stem_exists
+from naming_contract import build_stem_filename, build_segment_filename, build_silence_filename, parse_stem_filename
+from validator_audio import (
+    validate_wav_header,
+    compute_sha256,
+    compute_rms,
+    detect_clipped_samples,
+)
+from contract_signature import compute_contract_signature
 from naming_contract import build_stem_filename
 from validator_audio import validate_wav_header
 
@@ -76,6 +84,14 @@ def _generate_list_stems(items: Iterable[str], kind: str) -> Dict[str, str]:
     return generated
 
 
+def generate_segment_stem(segment_id: str, text: str) -> Dict[str, str]:
+    """Generate a segment-specific stem following the naming contract."""
+
+    stem_label = build_segment_filename(segment_id)
+    path = cartesia_generate(text, stem_label, voice_id=VOICE_ID)
+    return {stem_label: path}
+
+
 def _extract_breaks(template: Dict[str, Any]) -> Set[int]:
     durations: Set[int] = set()
     for seg in template.get("segments", []):
@@ -98,6 +114,12 @@ def _generate_template_stems(template: Dict[str, Any]) -> Dict[str, str]:
         if not seg_id or not text:
             continue
         try:
+            generic_label = build_stem_filename("generic", seg_id)
+            generic_path = cartesia_generate(text, generic_label, voice_id=VOICE_ID)
+            generated[generic_label] = generic_path
+            generated.update(generate_segment_stem(seg_id, text))
+        except Exception as exc:
+            print(f"[WARN] Failed to generate template stem {seg_id}: {exc}")
             stem_label = build_stem_filename("generic", seg_id)
             path = cartesia_generate(text, stem_label, voice_id=VOICE_ID)
             generated[stem_label] = path
@@ -144,6 +166,11 @@ def regenerate_all() -> None:
 
     for duration in silence_durations:
         path = ensure_silence_stem_exists(duration)
+        generated[build_silence_filename(duration)] = path
+
+    generated.update(template_stems)
+
+    signature = compute_contract_signature()
         generated[f"silence.{duration}ms"] = path
 
     generated.update(template_stems)
@@ -154,6 +181,17 @@ def regenerate_all() -> None:
         "encoding": SONIC3_ENCODING,
         "sample_rate": SONIC3_SAMPLE_RATE,
         "cartesia_version": CARTESIA_VERSION,
+        "contract_signature": signature,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+    def _stem_type(name: str) -> str:
+        parsed = parse_stem_filename(name)
+        kind = parsed.get("kind", "unknown")
+        if kind == "unknown" and name.startswith("silence."):
+            return "silence"
+        return kind
+
         "contract_signature": f"{MODEL_ID}|{SONIC3_CONTAINER}|{SONIC3_ENCODING}|{SONIC3_SAMPLE_RATE}",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
@@ -171,6 +209,12 @@ def regenerate_all() -> None:
             "encoding": SONIC3_ENCODING,
             "sample_rate": header.get("sample_rate"),
             "duration_seconds": header.get("duration_seconds"),
+            "bit_depth": header.get("bit_depth"),
+            "channels": header.get("channels"),
+            "sha256": compute_sha256(path),
+            "rms": compute_rms(path),
+            "clipped_samples": detect_clipped_samples(path),
+            "stem_type": _stem_type(stem_id),
             "cartesia_version": CARTESIA_VERSION,
             "contract_signature": index_payload["contract_signature"],
         }
@@ -178,4 +222,5 @@ def regenerate_all() -> None:
     STEMS_INDEX_FILE.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
 
 
+__all__ = ["regenerate_all", "generate_segment_stem"]
 __all__ = ["regenerate_all"]

@@ -8,6 +8,11 @@ modules no longer call Cartesia directly.
 
 from __future__ import annotations
 
+import io
+import json
+import re
+import time
+import wave
 import json
 import re
 import time
@@ -26,6 +31,10 @@ from config import (
     VOICE_ID,
     build_sonic3_payload,
 )
+from errors.sonic3_errors import Sonic3Error, OutputValidationError
+
+
+class Sonic3ClientError(Sonic3Error):
 from errors.sonic3_errors import Sonic3Error
 
 
@@ -196,6 +205,55 @@ def send_request(payload: Dict[str, Any]) -> bytes:
     return response.content
 
 
+def log_sonic3_request(payload: Dict[str, Any], response_time_ms: float) -> None:
+    """Lightweight logging hook for Sonic-3 requests."""
+
+    transcript_preview = (payload.get("transcript") or "").strip().split()
+    preview = " ".join(transcript_preview[:6])
+    print(
+        f"[Sonic3] {len(payload.get('transcript', ''))} chars | voice={payload.get('voice', {}).get('id')} | "
+        f"{response_time_ms:.1f} ms | {preview}"
+    )
+
+
+def extract_cartesia_version(response_headers: Dict[str, Any]) -> str | None:
+    """Extract Cartesia version header if present."""
+
+    for key in ("x-cartesia-version", "X-Cartesia-Version"):
+        if key in response_headers:
+            return str(response_headers[key])
+    return None
+
+
+def _validate_wav_bytes(payload: bytes) -> None:
+    try:
+        with wave.open(io.BytesIO(payload), "rb") as wf:
+            channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            sample_rate = wf.getframerate()
+    except wave.Error as exc:
+        raise OutputValidationError(f"Invalid WAV bytes returned: {exc}") from exc
+
+    if channels != 1:
+        raise OutputValidationError(f"Expected mono output; got {channels} channels")
+    if sample_width * 8 != 16:
+        raise OutputValidationError(f"Expected 16-bit PCM; got {sample_width * 8} bits")
+    if sample_rate != SONIC3_SAMPLE_RATE:
+        raise OutputValidationError(f"Expected sample_rate {SONIC3_SAMPLE_RATE}; got {sample_rate}")
+
+
+def safe_generate_wav(transcript: str, voice_id: str, speed: float = 1.0, volume: float = 1.0) -> bytes:
+    """End-to-end Sonic-3 generation with validation and logging."""
+
+    payload = build_payload(transcript, voice_id, speed, volume)
+    start = time.perf_counter()
+    wav_bytes = send_request(payload)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    log_sonic3_request(payload, elapsed_ms)
+    _validate_wav_bytes(wav_bytes)
+    return wav_bytes
+
+
 __all__ = [
     "Sonic3ClientError",
     "InvalidPayloadError",
@@ -206,4 +264,7 @@ __all__ = [
     "send_request",
     "parse_sonic3_errors",
     "detect_voice_compatibility",
+    "log_sonic3_request",
+    "extract_cartesia_version",
+    "safe_generate_wav",
 ]
