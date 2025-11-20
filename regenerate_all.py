@@ -27,7 +27,12 @@ from config import (
     TEMPLATE_DIR,
 )
 from silence_generator import ensure_silence_stem_exists
-from naming_contract import build_stem_filename, build_segment_filename, build_silence_filename, parse_stem_filename
+from naming_contract import (
+    build_stem_filename,
+    build_segment_filename,
+    build_silence_filename,
+    parse_stem_filename,
+)
 from validator_audio import (
     validate_wav_header,
     compute_sha256,
@@ -35,15 +40,18 @@ from validator_audio import (
     detect_clipped_samples,
 )
 from contract_signature import compute_contract_signature
-from naming_contract import build_stem_filename
-from validator_audio import validate_wav_header
 
+
+# ---------------------------------------------------------
+# JSON & LIST HELPERS
+# ---------------------------------------------------------
 
 def _read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as f:
-        raw = f.read()
-    # Allow // comments for compatibility with existing templates
-    sanitized = "\n".join(line for line in raw.splitlines() if not line.strip().startswith("//"))
+    raw = path.read_text(encoding="utf-8")
+    sanitized = "\n".join(
+        line for line in raw.splitlines()
+        if not line.strip().startswith("//")
+    )
     return json.loads(sanitized)
 
 
@@ -51,42 +59,43 @@ def _load_list(path: Path) -> Iterable[str]:
     if not path.exists():
         return []
     data = _read_json(path)
-    if isinstance(data, list):
-        return data
-    return []
+    return data if isinstance(data, list) else []
 
+
+# ---------------------------------------------------------
+# CLEANUP (SAFE, CONTRACT-DRIVEN)
+# ---------------------------------------------------------
 
 def _cleanup_stems() -> None:
+    """Delete only contract-controlled stems."""
     for wav in STEMS_DIR.glob("stem.*.wav"):
         wav.unlink(missing_ok=True)
     for wav in STEMS_DIR.glob("silence.*ms.wav"):
-    for wav in STEMS_DIR.rglob("*.wav"):
         wav.unlink(missing_ok=True)
 
+
+# ---------------------------------------------------------
+# GENERATORS
+# ---------------------------------------------------------
 
 def _generate_list_stems(items: Iterable[str], kind: str) -> Dict[str, str]:
     generated: Dict[str, str] = {}
     for item in items:
         if not item:
             continue
+
         stem_label = build_stem_filename(kind, item)
+
         try:
             path = cartesia_generate(item, stem_label, voice_id=VOICE_ID)
             generated[stem_label] = path
         except Exception as exc:
             print(f"[WARN] Failed to generate stem {stem_label}: {exc}")
-        stem_label = f"stem.{kind}.{item}" if not item.startswith("stem.") else item
-        try:
-            path = cartesia_generate(item, stem_label, voice_id=VOICE_ID)
-            generated[stem_label] = path
-        except Exception:
-            continue
+
     return generated
 
 
 def generate_segment_stem(segment_id: str, text: str) -> Dict[str, str]:
-    """Generate a segment-specific stem following the naming contract."""
-
     stem_label = build_segment_filename(segment_id)
     path = cartesia_generate(text, stem_label, voice_id=VOICE_ID)
     return {stem_label: path}
@@ -101,8 +110,6 @@ def _extract_breaks(template: Dict[str, Any]) -> Set[int]:
                 durations.add(dur)
         except Exception as exc:
             print(f"[WARN] Failed to parse break_ms in segment {seg!r}: {exc}")
-        except Exception:
-            continue
     return durations
 
 
@@ -113,28 +120,25 @@ def _generate_template_stems(template: Dict[str, Any]) -> Dict[str, str]:
         text = seg.get("text")
         if not seg_id or not text:
             continue
+
         try:
             generic_label = build_stem_filename("generic", seg_id)
             generic_path = cartesia_generate(text, generic_label, voice_id=VOICE_ID)
             generated[generic_label] = generic_path
+
             generated.update(generate_segment_stem(seg_id, text))
+
         except Exception as exc:
             print(f"[WARN] Failed to generate template stem {seg_id}: {exc}")
-            stem_label = build_stem_filename("generic", seg_id)
-            path = cartesia_generate(text, stem_label, voice_id=VOICE_ID)
-            generated[stem_label] = path
-        except Exception as exc:
-            print(f"[WARN] Failed to generate template stem {seg_id}: {exc}")
-            path = cartesia_generate(text, seg_id, voice_id=VOICE_ID)
-            generated[seg_id] = path
-        except Exception:
-            continue
+
     return generated
 
 
-def regenerate_all() -> None:
-    """Orchestrate regeneration of all stems and silence assets."""
+# ---------------------------------------------------------
+# MAIN PIPELINE
+# ---------------------------------------------------------
 
+def regenerate_all() -> None:
     _cleanup_stems()
 
     names = _load_list(Path(COMMON_NAMES_FILE))
@@ -156,11 +160,8 @@ def regenerate_all() -> None:
                 template = _read_json(template_file)
             except Exception as fallback_exc:
                 print(f"[WARN] Failed to parse template fallback {template_file}: {fallback_exc}")
-        except Exception:
-            try:
-                template = _read_json(template_file)
-            except Exception:
                 continue
+
         silence_durations.update(_extract_breaks(template))
         template_stems.update(_generate_template_stems(template))
 
@@ -171,9 +172,6 @@ def regenerate_all() -> None:
     generated.update(template_stems)
 
     signature = compute_contract_signature()
-        generated[f"silence.{duration}ms"] = path
-
-    generated.update(template_stems)
 
     index_payload: Dict[str, Any] = {
         "stems": {},
@@ -192,17 +190,13 @@ def regenerate_all() -> None:
             return "silence"
         return kind
 
-        "contract_signature": f"{MODEL_ID}|{SONIC3_CONTAINER}|{SONIC3_ENCODING}|{SONIC3_SAMPLE_RATE}",
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-
     for stem_id, path in generated.items():
         try:
             header = validate_wav_header(path)
         except Exception as exc:
             print(f"[WARN] Skipping invalid stem {stem_id}: {exc}")
-        except Exception:
             continue
+
         index_payload["stems"][stem_id] = {
             "path": path,
             "audio_format": SONIC3_CONTAINER,
@@ -216,11 +210,10 @@ def regenerate_all() -> None:
             "clipped_samples": detect_clipped_samples(path),
             "stem_type": _stem_type(stem_id),
             "cartesia_version": CARTESIA_VERSION,
-            "contract_signature": index_payload["contract_signature"],
+            "contract_signature": signature,
         }
 
     STEMS_INDEX_FILE.write_text(json.dumps(index_payload, indent=2), encoding="utf-8")
 
 
 __all__ = ["regenerate_all", "generate_segment_stem"]
-__all__ = ["regenerate_all"]
